@@ -1,0 +1,110 @@
+﻿@page "/"
+
+@using TuneLabProject.Shared.SharedModels
+
+@inject HttpClient Http
+
+<div class="container content-box-sam">
+
+    <div class="row">
+
+        <div class="col" style="position:relative;">
+            <div>
+                <img src="/img/bg.jpg" style="width:100%; opacity:0.8;" />
+            </div>
+            <div style="position:absolute; left:50%; top:50%; transform: translate(-50%, -50%);">
+                <img style="width:100%;" src="/img/logo_horizontal_inverted.png" />
+            </div>
+        </div>
+
+    </div>
+
+    <div class="row" style="margin-top:50px;">
+
+        <div class="row">
+            <div class="col">
+                <h3 class="text-info" style="margin: 0 0 20px 10px;">Featured Products</h3>
+            </div>
+
+        </div>        
+
+        <div class="row">
+
+            @*
+                SS 17/04
+                If the request for featured products has completed and was successful then
+                display the featured products. These are really just 3 random products returned by the server.
+            *@
+
+            @if (productsResponse != null && productsResponse.Success)
+            {
+                foreach (Product product in productsResponse.Products)
+                {
+                    <FeaturedProductItem Product="product" />
+                }
+            }
+
+        </div>
+
+    </div>
+
+    @*
+        SS 17/04
+        If the featured product request has not yet completed then display a loading message.
+        If it has completed but was flagged as unsuccessful then display an error message.
+    *@
+
+    @if (productsResponse == null)
+    {
+        
+        <div class="alert alert-info">
+            Loading product data. Please wait...
+        </div>
+        
+    }
+    else if (productsResponse != null && !productsResponse.Success)
+    {
+        
+        <div class="alert alert-danger">
+            <strong>Error!</strong> An error occurred while trying to load featured products...
+        </div>       
+
+    }
+
+    <div class="row justify-content-center align-items-center">
+        
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+@code{   
+
+    private ProductsResponse productsResponse;
+
+    //SS 03/04 Method fired when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            //Send request to ProductController to get 3 random products to display as featured
+            productsResponse = await Http.GetJsonAsync<ProductsResponse>("Product/GetFeaturedProducts");
+        }
+        catch(Exception e)
+        {
+            productsResponse = new ProductsResponse()
+            {
+                Success = false,
+                ErrorMessage = e.Message
+            };
+            System.Diagnostics.Debug.WriteLine("An error occurred in Index.razor while trying to get featured products.\n" + e.Message);
+        }
+
+    }
+
+}

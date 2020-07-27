@@ -1,0 +1,366 @@
+﻿@page "/product-shop"
+
+@using TuneLabProject.Shared.Services
+@using TuneLabProject.Shared.SharedModels
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Text.Json
+@using TuneLabProject.Client.Utilities
+
+@inject IJSRuntime JSRuntime
+@inject IAccessTokenProvider AuthenticationService
+@inject AppState AppState
+@inject NavigationManager Navigation
+@inject HttpClient Http
+
+<div class="container content-box-sam">
+
+    <div class="alert alert-warning">
+            <strong>Note</strong> This is a student website and is completely fictional. No orders can or will be fulfilled!
+    </div>
+
+    <h1 class="text-info">Product Catalog</h1>
+
+    <div class="row">
+        
+        <div class="col table-responsive">
+
+            <div class="row" style="margin-bottom:10px;">
+
+                <div class="col">
+
+                    <label class="text-info">Category</label>
+                    <select style="width:auto" class="form-control" @onchange="CategorySelected">
+
+                        <option value="0">All</option>
+
+                        @*
+                            SS 17/04
+                            If request has completed and was successful then populate the category select element
+                            with the available product categories
+                        *@
+
+                        @if (productsResponse != null && productsResponse.Success)
+                        {
+
+                            foreach (CategoryModel category in productsResponse.Categories)
+                            {
+                                <option value="@category.CategoryId">@category.CategoryName</option>
+                            }
+
+                        }
+
+                    </select>
+
+                </div>
+                <div class="col" style="text-align:center;">
+
+                    @*
+                        SS 17/04
+                        If products have been filtered by vehicle id then show a button allowing the user to clear this filter
+                    *@
+
+                    @if (productRequest != null && productRequest.FilterVehicleId != 0)
+                    {
+                        <button class="btn btn-info" @onclick="ClearVehicleFilter">Clear Vehicle Filter</button>
+                    }
+                </div>
+                <div class="col"></div>
+            </div>
+
+            <table class="table table-hover">
+                <thead>
+
+                    @*
+                        SS 17/04
+                        Render my custom ProductTableHeader component. This component displays table headers that allow the user
+                        to click to sort products by id, name and price in ascending and descending order. See /Shared/ProductTableHeader.razor for more info
+                    *@
+
+                    <ProductTableHeader OnHeaderSelected="HeaderSelected" SortedBy="currentSort" Descending="descending" />
+
+                </thead>
+                <tbody>
+
+                    @*
+                        SS 17/04
+                        If productsResponse is null then the request has not yet completed. Display a loading message.
+                    *@
+
+                    @if (productsResponse == null)
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <div class="alert alert-info">
+                                    Loading product data. Please wait...
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+
+                        @*
+                            SS 17/04
+                            If the request has completed but has been flagged as unsuccessful then display an error message.
+                        *@
+
+                        if (!productsResponse.Success)
+                        {
+                            <tr>
+                                <td colspan="5">
+                                    <div class="alert alert-danger">
+                                        <strong>Error!</strong> An error occurred while trying to load product data. Please try again.<br />
+                                        @productsResponse.ErrorMessage
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+
+                            @*
+                                SS 17/04
+                                If the request has completed and was successful but no products were returned then display an info message.
+                                Otherwise display all the products for the current page using my custom ProductShopItem component.
+                                See /Shared/ProductShopItem.razor for more info.
+                            *@
+
+                            if (productsResponse.Products.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="5">
+                                        <div class="alert alert-info">
+                                            There are no products that match your enquiry<br />
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (Product product in productsResponse.Products)
+                                {
+                                    <ProductShopItem Product="product" CartUpdated="OnCartUpdated" />
+                                }
+                            }
+
+                        }
+
+                    }
+
+                </tbody>
+            </table>
+
+            @*
+                SS 17/04
+                Render my custom Pagination control component. See /Shared/Pagination.razor for more info
+            *@
+
+            <Pagination TotalPages="totalPages" CurrentPage="currentPage" PageRadius="2" OnPageSelected="PageSelected" />
+
+        </div>
+    </div>
+
+    <div class="row justify-content-center align-items-center">
+        
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private ProductRequestDTO productRequest;
+    private ProductsResponse productsResponse;
+
+    private int currentPage = 1;
+    private int totalPages;
+    private ProductRequestDTO.SortType currentSort;
+    private bool descending;
+
+    //SS 03/04 Method fired when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+        //Create a new request object, this can be reused through the life of the page model
+        productRequest = new ProductRequestDTO();
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+
+        //Check to see if page has been loaded with a query string that includes a vehicle id
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("vehicleId", out var param))
+        {
+            if(int.TryParse(param.First(), out int id))
+            {
+                productRequest.FilterVehicleId = id;
+            }
+        }
+        
+        //Initialise other request parameters
+        currentSort = ProductRequestDTO.SortType.ProductId;
+        descending = false;
+
+        //Load products
+        await GetProducts();
+    }
+
+    //SS 03/04 Method for sending request for products
+    private async Task GetProducts()
+    {
+
+        //Serialize request data transfer object
+        string productRequestJson = JsonSerializer.Serialize(productRequest);
+
+        try
+        {
+            //Send request to ProductController to get paginated product results
+            productsResponse = await Http.PostJsonAsync<ProductsResponse>("Product/PostProductsPaginated", productRequestJson);
+        }
+        catch(Exception e)
+        {
+            productsResponse = new ProductsResponse()
+            {
+                Success = false,
+                ErrorMessage = e.Message
+            };
+            System.Diagnostics.Debug.WriteLine("An error occurred in ProductShop.razor while trying to retrieve product information.\n" + e.Message);
+        }
+
+        if(productsResponse != null)
+        {
+
+            totalPages = productsResponse.TotalPages;
+
+        }
+    }
+
+    //SS 03/04 This method is fired when a product category is selected
+    private async Task CategorySelected(ChangeEventArgs e)
+    {
+        //If selection is valid then add categpry id to request and reload products
+        if(int.TryParse(e.Value.ToString(), out int categoryId))
+        {
+            currentPage = 1;
+            productRequest.PageNumber = 1;
+            productRequest.FilterCategoryId = categoryId;
+            await GetProducts();
+        }
+    }
+
+    //SS 03/04 This method is passed to a delegate in the Pagination component and invoked when a page number is clicked
+    private async Task PageSelected(int pageNumber)
+    {
+        //Set current page
+        currentPage = pageNumber;
+        productRequest.PageNumber = pageNumber;
+
+        //Reload products
+        await GetProducts();
+    }
+
+    //SS 03/04 This method is passed to a delegate in the TableHeader component and invoked when a sort header is clicked
+    private async Task HeaderSelected(ProductRequestDTO.SortType sortType)
+    {
+        //If the sort type is the same as the current then just change whether its descending or not, otherwise change sort type and set to ascending
+        if(sortType == currentSort)
+        {
+            descending = !descending;
+        }
+        else
+        {
+            currentSort = sortType;
+            descending = false;
+        }
+
+        //Set sort parameters in request
+        productRequest.SortBy = currentSort;
+        productRequest.Descending = descending;
+
+        //Reload products
+        await GetProducts();
+    }
+
+    //SS 03/04 Method for clearing the query string and vehicle filter and reloading products
+    private async Task ClearVehicleFilter()
+    {
+        Navigation.NavigateTo(Navigation.BaseUri + "product-shop");
+        productRequest.FilterVehicleId = 0;
+        currentPage = 1;
+        productRequest.PageNumber = 1;
+        await GetProducts();
+    }
+
+    //SS 29/03 Callback method for ProductShopItemComponents
+    private async void OnCartUpdated(int productId, int quantity)
+    {
+
+        //Check if item is in the shopping cart
+        bool inCart = await JSRuntime.InvokeAsync<bool>("containsProduct", productId);
+        string cartData = null;
+
+        if (inCart)
+        {
+
+            //Get the quantity of the product currently stored in the cart
+            int currentQuantityInCart = await JSRuntime.InvokeAsync<int>("getProductQuantity", productId);
+
+            //If the new quantity is the same as the quantity currently stored then no changes are necessary
+            if (quantity == currentQuantityInCart) return;
+
+            //If its in the user's cart and the requested quantity is greater than zero, then update the cookie data using javascript
+            if (quantity > 0)
+            {
+                cartData = await JSRuntime.InvokeAsync<string>("changeItemQuantity", productId, quantity);
+            }
+            //If quantity is zero, then remove the item from the cookie data and notify the shopping cart link to update
+            else
+            {
+                cartData = await JSRuntime.InvokeAsync<string>("removeFromCart", productId);
+                AppState.CartHasChanged();
+            }
+
+        }
+        else
+        {
+            //If the item is not in the cart, then add the item
+            cartData = await JSRuntime.InvokeAsync<string>("addToCart", productId, quantity);
+            AppState.CartHasChanged();
+        }
+
+        //Try and get the current user if they are logged in
+        var user = (await authenticationStateTask).User;
+
+        //If user is logged in then also update the cart data in the database
+        if (cartData != null && user.Identity.IsAuthenticated)
+        {
+
+            //Attempt to get JWT auth token
+            var tokenResult = await AuthenticationService.RequestAccessToken();
+
+            if (tokenResult.TryGetToken(out var token))
+            {
+
+                //Send request to cart controller to set the users cart and await response
+                HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Post, Navigation.BaseUri + "Cart/SetUserCart",
+                        cartData, token.Value);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error in ProductShop.razor. The server responded with the code {response.StatusCode.ToString()} while trying to set user cart data.");
+                }
+
+            }
+
+        }
+
+    }
+
+}

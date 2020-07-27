@@ -1,0 +1,443 @@
+﻿@page "/cart"
+
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using TuneLabProject.Shared.SharedModels
+@using TuneLabProject.Shared.Services
+@using TuneLabProject.Client.Utilities
+@using System.Text.Json
+
+@implements IDisposable
+
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject IAccessTokenProvider AuthenticationService
+@inject AppState AppState
+@inject HttpClient Http
+
+<div class="container content-box-sam">
+
+    <div class="alert alert-warning">
+        <strong>Note</strong> This is a student website and is completely fictional. No orders can or will be fulfilled!
+    </div>
+
+    <h1 class="text-info">Shopping Cart</h1>
+
+    <div class="row">
+        <div class="col table-responsive">
+            <table class="table table-hover">
+                <thead>
+
+                    <tr>
+                        <th>ID</th>
+                        <th>Product</th>
+                        <th>Quantity</th>
+                        <th class="text-center">Price</th>
+                        <th class="text-center">Total</th>
+                        <th> </th>
+                    </tr>
+
+                </thead>
+                <tbody>
+
+                    @*
+                        SS 17/04
+                        If request has not yet been completed then display a loading message.
+                    *@
+
+                    @if (!CartLoaded)
+                    {
+                        <tr>
+                            <td colspan="6">
+                                <div class="alert alert-info">
+                                    Loading cart data. Please wait...
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+
+                        @*
+                            SS 17/04
+                            If request has completed but cartProducts list is null then an error has occurred. Display an error message.
+                        *@
+
+                        if (cartProducts == null)
+                        {
+                            <tr>
+                                <td colspan="6">
+                                    <div class="alert alert-danger">
+                                        <strong>Error!</strong> An error occurred while trying to load cart data. Please try again.<br />
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+
+                            @*
+                                SS 17/04
+                                If request was successful continue and display products in cart.
+                                The cart items are rendered using my custom CartLineItem component. See /Shared/CartLineItem.razor
+                                for more info.
+                            *@
+
+                            if (cartProducts.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="6">
+                                        <div class="alert alert-info">
+                                            The shopping cart is now in an empty state. Back to the <strong><NavLink href="product-shop">Product Catalogue</NavLink></strong><br />
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (CartProductResponse product in cartProducts)
+                                {
+                                    <CartLineItem LineItemUpdated="OnLineItemUpdated" Product="@product.Product" Quantity="@product.Quantity" />
+                                }
+
+                                <tr>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td><h5>Subtotal</h5></td>
+                                    <td class="text-right"><h5><strong>$@Subtotal</strong></h5></td>
+                                </tr>
+
+                                <tr>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td><h5>GST</h5></td>
+                                    <td class="text-right"><h5><strong>$@Gst</strong></h5></td>
+                                </tr>
+
+                                <tr>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td><h3>Total</h3></td>
+                                    <td class="text-right"><h3><strong>$@Total</strong></h3></td>
+                                </tr>
+
+                                <tr>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>   </td>
+                                    <td>
+                                        
+                                        <strong>Checkout</strong>                                        
+
+                                    </td>
+                                    <td>
+
+                                        @*
+                                            SS 17/04
+                                            If there are products in the user's cart then the following code block checks if they are logged in.
+                                            If the user is not logged in a button will be rendered that instructs the user to log in first to be able to pay.
+                                            If the user is logged in a div element will be rendered to allow the paypal button to be rendered.
+                                        *@
+                                        
+                                        <AuthorizeView>
+                                            <Authorized>
+                                                <div id="checkoutPaypal"></div>
+                                            </Authorized>
+                                            <NotAuthorized>
+                                                <button type="button" class="btn btn-success" style="min-width:120px;" @onclick="RedirectToLogin">Login To Pay</button>
+                                            </NotAuthorized>
+                                        </AuthorizeView>                                        
+
+                                    </td>
+                                </tr>
+
+
+                            }
+
+                        }
+
+                    }
+
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row justify-content-center align-items-center">
+        
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private List<CartProductResponse> cartProducts;
+
+    private DotNetObjectReference<ShoppingCart> instance;
+
+    private decimal Subtotal { get; set; }
+
+    private decimal Gst { get; set; }
+
+    private decimal Total { get; set; }
+
+    private bool CartLoaded { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        //Get serialized cart data from cookie
+        string cartJson = await JSRuntime.InvokeAsync<string>("getCartJson");
+
+        try
+        {
+            //Send request to ProductController to get product information for the products in the cart
+            cartProducts = await Http.PostJsonAsync<List<CartProductResponse>>("Product/GetProductsFromCartJson", cartJson);
+        }
+        catch(Exception e)
+        {
+            cartProducts = null;
+            System.Diagnostics.Debug.WriteLine("An error occurred in ShoppingCart.razor while trying to retrieve product data\n" + e.Message);
+        }
+
+        CartLoaded = true;
+        CalculateTotals();
+
+    }
+
+    //SS 06/04 Callback method invoked via javascript located in cart.js
+    [JSInvokable("CreateInvoice")]
+    public async void CreateInvoiceCallback(string transactionId, string buyerName, string buyerStreet, string buyerCity, string buyerPostcode)
+    {
+
+        bool error = false;
+        string message = "";
+
+        //Try to get an authentication token
+        var tokenResult = await AuthenticationService.RequestAccessToken();
+
+        if (tokenResult.TryGetToken(out var token))
+        {
+
+            //Create a new data transfer object that contains the transaction information
+            InvoiceRequestDTO requestDTO = new InvoiceRequestDTO()
+            {
+                CartProducts = cartProducts,
+                TotalPaid = Total,
+                TransactionId = transactionId,
+                BuyerName = buyerName,
+                BuyerStreet = buyerStreet,
+                BuyerCity = buyerCity,
+                BuyerPostcode = buyerPostcode
+            };
+
+            //Serialize the data transfer object into a json string
+            string request = JsonSerializer.Serialize(requestDTO);
+
+            //Send request to the invoice controller to create new invoice
+            HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Post, Navigation.BaseUri + "Invoice/CreateNewInvoice",
+                        request, token.Value);
+
+            //If response was successful, clear cart and update cart totals and cart link etc.
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("clearCartCookie");
+                cartProducts.Clear();
+                CalculateTotals();
+                AppState.CartHasChanged();
+                StateHasChanged();
+                message = "Thank you for your order!<br/>Your shopping cart has been cleared.";
+            }
+            else
+            {
+                error = true;
+                message = "Invoice creation error!";
+                System.Diagnostics.Debug.WriteLine($"Error in ShoppingCart.razor. The server responded with the code {response.StatusCode.ToString()} while trying to create a new invoice.");
+            }
+        }
+        else
+        {
+            error = true;
+            message = "Authentication error!";
+            System.Diagnostics.Debug.WriteLine($"Error in ShoppingCart.razor. Could not retrieve authentication token.");
+        }
+
+        //Once complete invoke javascript function to show success/error popup
+        await JSRuntime.InvokeVoidAsync("showConfirmDialog", transactionId, error, message);
+    }
+
+    //SS 06/04 Method to render paypal buttons
+    private async Task RenderPayPalButtons()
+    {
+        //If not already done, create a new reference of this DotNet instance
+        if(instance == null)
+        {
+            instance = DotNetObjectReference.Create(this);
+        }
+
+        //Serialize all cart products into a json string
+        string products = JsonSerializer.Serialize(cartProducts);
+
+        //Invoke javascript function to render buttons and create paypal order etc.
+        await JSRuntime.InvokeVoidAsync("initPaypal", "checkoutPaypal", products, Subtotal, Gst, instance);
+    }
+
+    //SS 06/04 Method called after page has rendered, I render the buttons here to ensure the div that the buttons
+    //render in has rendered, otherwise errors will occur.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+
+        //Only render buttons if there are items in the cart and user is logged in
+        if (cartProducts != null && cartProducts.Count > 0)
+        {
+            var user = (await authenticationStateTask).User;
+
+            if (user.Identity.IsAuthenticated)
+            {
+                await RenderPayPalButtons();
+            }
+
+        }
+
+    }
+
+    //SS 06/04 Method invoked by button to redirect user to login page, passing the current page as a return url
+    private void RedirectToLogin()
+    {
+        Navigation.NavigateTo($"authentication/login?returnUrl={Navigation.Uri}");
+    }
+
+    //SS 03/04 Method for calculating totals and gst and updating the relevant values
+    private void CalculateTotals()
+    {
+
+        Subtotal = 0;
+        Gst = 0;
+        Total = 0;
+
+        if (cartProducts != null && cartProducts.Count > 0)
+        {
+
+            foreach (CartProductResponse cartProduct in cartProducts)
+            {
+                Subtotal += (cartProduct.Product.CurrentPrice * cartProduct.Quantity);
+            }
+
+            Subtotal = Math.Round(Subtotal, 2);
+
+            Gst = Math.Round(Subtotal * 0.15m, 2);
+            Total = Math.Round(Subtotal + Gst, 2);
+
+        }
+
+    }
+
+    //SS 03/04 This method is passed to the delegate in each line item
+    private async void OnLineItemUpdated(int id, int quantity)
+    {
+
+        bool changed = false;
+        string cartData = null;
+
+        //If quantity is 0 then product is to be removed, otherwise it needs its quantity updating
+        if (quantity == 0)
+        {
+            int index = -1;
+
+            //Check if product exists in the list and what index its at
+            for (int i = 0; i < cartProducts.Count; i++)
+            {
+                if (cartProducts[i].Product.ProductId == id)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index != -1)
+            {
+                //Remove from list and cookie data and instruct shopping cart link to update
+                cartProducts.RemoveAt(index);
+                changed = true;
+                cartData = await JSRuntime.InvokeAsync<string>("removeFromCart", id);
+                AppState.CartHasChanged();
+            }
+        }
+        else
+        {
+            foreach (CartProductResponse cartProduct in cartProducts)
+            {
+                //If product exists in the cart product list and the new quantity is different to the current then update the product quantity in the list
+                if (cartProduct.Product.ProductId == id && cartProduct.Quantity != quantity)
+                {
+                    cartProduct.Quantity = quantity;
+                    changed = true;
+                    cartData = await JSRuntime.InvokeAsync<string>("changeItemQuantity", id, quantity);
+                    break;
+                }
+            }
+        }
+
+        //If the cart was changed then continue
+        if (changed)
+        {
+            //Update the totals
+            CalculateTotals();
+            StateHasChanged();
+
+            //Check if a user is logged in
+            var user = (await authenticationStateTask).User;
+
+            if (cartData != null && user.Identity.IsAuthenticated)
+            {
+
+                //Try to get an authentication token
+                var tokenResult = await AuthenticationService.RequestAccessToken();
+
+                if (tokenResult.TryGetToken(out var token))
+                {
+
+                    //Send authenticated request to update the user's cart data in the database
+                    HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Post, Navigation.BaseUri + "Cart/SetUserCart",
+                        cartData, token.Value);
+
+                    //If the server responded with an error code then log it to the console
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error in ShoppingCart.razor. The server responded with the code {response.StatusCode.ToString()} while trying to set user cart data.");
+                    }
+
+                }
+
+            }
+        }
+
+    }
+
+    //SS 06/04 Method called when page is disposed
+    public void Dispose()
+    {
+        //If a DotNet instance has been created, dispose it
+        if(instance != null)
+        {
+            instance.Dispose();
+        }
+    }
+
+}

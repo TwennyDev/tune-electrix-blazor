@@ -1,0 +1,631 @@
+﻿@page "/vehicle-search"
+
+@using TuneLabProject.Shared.SharedModels
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+
+
+<div class="container content-box-sam">
+
+    @*
+        SS 17/04
+        If vehicleResponse is null then the request has not yet completed. Display a loading message.
+    *@
+
+    @if (vehicleResponse == null)
+    {
+        <div class="alert alert-info">
+            Loading vehicle data. Please wait...
+        </div>
+    }
+    else
+    {
+
+        @*
+            SS 17/04
+            Once request has finished display a message depending on whether the request was successful or not.
+        *@
+
+        if (vehicleResponse.Success)
+        {
+            <div class="alert alert-success">
+                Use the form below to see expected results from the TuneLab flash tune service for your vehicle.
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-danger">
+                <strong>Error!</strong> An error occurred while trying to load vehicle data. Please try again.<br/>
+                @vehicleResponse.ErrorMessage
+            </div>
+        }
+
+    }   
+    
+    @*
+        SS 17/04
+        The following renders all the select elements and populates them with the vehicle information retrieved from the database
+        once the request has completed.
+        It also displays the expected horsepower and torque gains for a vehicle selected by the user.
+    *@
+
+    <div class="row">
+
+        <div class="col-lg-3">
+
+            <div class="form-group">
+
+                <label class="text-info" for="fuelTypeSelect">Fuel Type</label>
+                <select class="form-control" id="fuelTypeSelect" @onchange="OnSelectFuelType">
+
+                    @if (vehicleResponse == null)
+                    {
+                        <option value="0">Loading...</option>
+                    }
+                    else
+                    {
+
+                        if (vehicleResponse.Success)
+                        {
+                            <option value="0">All</option>
+                            foreach (FuelTypeModel ft in vehicleResponse.FuelTypes)
+                            {
+                                <option value="@ft.FuelTypeId">@ft.FuelTypeName</option>
+                            }
+                        }
+                        else
+                        {
+                            <option value="0">Error loading data...</option>
+                        }
+
+                    }
+
+                </select>
+
+            </div>
+
+        </div>
+
+        <div class="col-lg-3">
+
+            <div class="form-group">
+
+                <label class="text-info" for="makeSelect">Make</label>
+                <select class="form-control" id="makeSelect" @onchange="OnSelectMake">
+
+                    @if (vehicleResponse == null)
+                    {
+                        <option value="0">Loading...</option>
+                    }
+                    else
+                    {
+
+                        if (vehicleResponse.Success)
+                        {
+                            <option value="0">---------------</option>
+                            foreach (VehicleMake vm in vehicleResponse.VehicleMakes)
+                            {
+                                <option value="@vm.MakeId">@vm.MakeName</option>
+                            }
+                        }
+                        else
+                        {
+                            <option value="0">Error loading data...</option>
+                        }
+
+                    }
+
+                </select>
+
+            </div>
+
+        </div>
+
+        <div class="col-lg-3">
+
+            <div class="form-group">
+
+                <label class="text-info" for="modelSelect">Model</label>
+                <select class="form-control" id="modelSelect" @bind="SelectedModel">
+
+                    @if (vehicleResponse == null)
+                    {
+                        <option value="0">Loading...</option>
+                    }
+                    else
+                    {
+
+                        if (vehicleResponse.Success)
+                        {
+                            <option value="0">---------------</option>
+                            if (selectedModels != null)
+                            {
+
+                                foreach (VehicleModel model in selectedModels)
+                                {
+                                    <option value="@model.ModelId">@model.ModelName</option>
+                                }
+
+                            }
+                        }
+                        else
+                        {
+                            <option value="0">Error loading data...</option>
+                        }
+
+                    }
+
+                </select>
+
+            </div>
+
+        </div>
+
+        <div class="col-lg-3">
+
+            <div class="form-group">
+
+                <label class="text-info" for="engineSelect">Engine</label>
+                <select class="form-control" id="engineSelect" @bind="SelectedEngine">
+
+                    @if (vehicleResponse == null)
+                    {
+                        <option value="0">Loading...</option>
+                    }
+                    else
+                    {
+
+                        if (vehicleResponse.Success)
+                        {
+                            <option value="0">---------------</option>
+                            if (selectedEngines != null)
+                            {
+
+                                foreach (Vehicle engine in selectedEngines)
+                                {
+                                    <option value="@engine.VehicleId">@engine.Engine</option>
+                                }
+
+                            }
+                        }
+                        else
+                        {
+                            <option value="0">Error loading data...</option>
+                        }
+
+                    }
+
+                </select>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="row mt-4">
+
+        <div class="col vehicle-header-sam">
+
+            @if (VehicleDisplayName == null)
+            {
+                <span>No Vehicle Selected...</span>
+            }
+            else
+            {
+                @VehicleDisplayName
+            }
+            <hr />
+        </div>
+
+    </div>
+
+    <div class="row">
+
+        <div class="col-lg-6">
+
+            <div class="row">
+
+                <div class="col info-col-bold-sam">
+
+                    Horsepower
+                    <hr />
+
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col position-relative">
+                    <canvas width="160" height="160" style="margin:auto;" @ref="PowerCanvas"></canvas>
+                    <div class="chart-text-sam">
+                        <p @ref="PowerValue"></p>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Factory HP
+                    <hr />
+                    <span class="power-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>0</span>
+                        }
+                        else
+                        {
+                            @SelectedVehicle.FactoryHp
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Tuned HP
+                    <hr />
+                    <span class="power-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>0</span>
+                        }
+                        else
+                        {
+                            @SelectedVehicle.TunedHp
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Increased HP
+                    <hr />
+                    <span class="power-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>+0</span>
+                        }
+                        else
+                        {
+                            <span>+</span>@(SelectedVehicle.TunedHp - SelectedVehicle.FactoryHp)
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-lg-6">
+
+            <div class="row">
+
+                <div class="col info-col-bold-sam">
+
+                    Torque
+                    <hr />
+
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col position-relative">
+                    <canvas width="160" height="160" style="margin:auto;" @ref="TorqueCanvas"></canvas>
+                    <div class="chart-text-sam">
+                        <p @ref="TorqueValue"></p>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Factory NM
+                    <hr />
+                    <span class="torque-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>0</span>
+                        }
+                        else
+                        {
+                            @SelectedVehicle.FactoryNm
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Tuned NM
+                    <hr />
+                    <span class="torque-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>0</span>
+                        }
+                        else
+                        {
+                            @SelectedVehicle.TunedNm
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+            <div class="row">
+
+                <div class="col info-col-sam">
+
+                    Increased NM
+                    <hr />
+                    <span class="torque-text-sam">
+                        @if (SelectedVehicle == null)
+                        {
+                            <span>+0</span>
+                        }
+                        else
+                        {
+                            <span>+</span>@(SelectedVehicle.TunedNm - SelectedVehicle.FactoryNm)
+                        }
+                    </span>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="row justify-content-center align-items-center">
+
+        @*
+            SS 17/04
+            The following code renders a button that will navigate the user to the products page filtered by the selected vehicle.
+            If no vehicle is selected the button will be disabled.
+        *@
+
+        <div style="width:100%;margin-top:50px;text-align:center;">
+            <button class="@(selectedEngine == 0 ? "btn btn-light disabled" : "btn btn-info")" style="@(selectedEngine == 0 ? "cursor:default;" : null)" @onclick="ViewProductsForVehicle">
+                @(selectedEngine != 0 ? "View Products For This Vehicle" : "No Vehicle Selected")
+            </button>
+        </div>
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+
+    private VehicleResponseModel vehicleResponse;
+
+    private List<VehicleModel> selectedModels;
+    private List<Vehicle> selectedEngines;
+
+    //SS 17/04 The following ElementReferences are used to allow HTML elements to be passed to the JS via C#
+    private ElementReference PowerCanvas { get; set; }
+    private ElementReference PowerValue { get; set; }
+
+    private ElementReference TorqueCanvas { get; set; }
+    private ElementReference TorqueValue { get; set; }
+
+    private int SelectedFuelType { get; set; }
+
+    private int SelectedMake { get; set; }
+
+    private int selectedModel;
+    private int SelectedModel
+    {
+        get => selectedModel;
+
+        set
+        {
+            selectedModel = value;
+            OnSelectModel();
+
+        }
+    }
+
+    private int selectedEngine;
+    private int SelectedEngine
+    {
+        get => selectedEngine;
+
+        set
+        {
+            selectedEngine = value;
+
+            if (selectedEngine != 0)
+            {
+                SelectedVehicle = selectedEngines?
+                    .Where(e => e.VehicleId == selectedEngine)
+                    .FirstOrDefault();
+                UpdateCanvas();
+            }
+        }
+    }
+
+    private Vehicle SelectedVehicle { get; set; }
+
+    private string VehicleDisplayName { get; set; }
+
+    //SS 03/04 Method called when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+
+        try
+        {
+            //Send request to VehicleController to get all vehicle information
+            vehicleResponse = await Http.GetJsonAsync<VehicleResponseModel>("Vehicle");
+        }
+        catch(Exception e)
+        {
+            vehicleResponse = new VehicleResponseModel()
+            {
+                Success = false,
+                ErrorMessage = e.Message
+            };
+            System.Diagnostics.Debug.WriteLine("An error occurred in VehicleSearch.razor while trying to retrieve vehicle data.\n" + e.Message);
+        }
+
+        //If request was successful then load charts
+        if (vehicleResponse != null && vehicleResponse.Success)
+        {
+            UpdateCanvas();
+        }
+
+    }
+
+    //SS 03/04 Method for updating charts in canvases and also vehicle display name
+    private void UpdateCanvas()
+    {
+        //Get name of selected vehicle make from list
+        string makeName = vehicleResponse.VehicleMakes?
+            .Where(m => m.MakeId == SelectedMake)
+            .FirstOrDefault()?
+            .MakeName;
+
+        //Get name of selected vehicle model from list
+        string modelName = selectedModels?
+            .Where(m => m.ModelId == SelectedModel)
+            .FirstOrDefault()?
+            .ModelName;
+
+        //Get name of selected vehicle engine from list
+        string engineName = selectedEngines?
+            .Where(e => e.VehicleId == SelectedEngine)
+            .FirstOrDefault()?
+            .Engine;
+
+        //Set vehicle display name if selection valid
+        if (makeName == null || modelName == null || engineName == null)
+        {
+            VehicleDisplayName = "No Vehicle Selected...";
+        }
+        else
+        {
+            VehicleDisplayName = makeName + " " + modelName + " " + engineName;
+        }
+
+        //Calculate power and torque increases
+        int power = SelectedVehicle != null ? (int)Math.Ceiling(((SelectedVehicle.TunedHp - SelectedVehicle.FactoryHp) / (double)SelectedVehicle.FactoryHp) * 100) : 0;
+        int torque = SelectedVehicle != null ? (int)Math.Ceiling(((SelectedVehicle.TunedNm - SelectedVehicle.FactoryNm) / (double)SelectedVehicle.FactoryNm) * 100) : 0;
+
+        //Invoke javascript method to update canvases, this method can be found in vehicle-search.js
+        JSRuntime.InvokeVoidAsync("updateCanvas", new object[] { PowerCanvas, PowerValue, TorqueCanvas, TorqueValue, power, torque });
+
+    }
+
+    //SS 03/04 Method fired when selecting a fuel type
+    private void OnSelectFuelType(ChangeEventArgs e)
+    {
+
+        //Try to parse value passed from the onchange event
+        bool chk = int.TryParse(e.Value.ToString(), out int value);
+
+        //If value was parsed successfully set the fuel type
+        SelectedFuelType = chk ? value : 0;
+
+        //Invoke OnSelectModel which will reload the engine select box with engines that match this fuel type
+        OnSelectModel();
+
+    }
+
+    //SS 03/04 Method fired when selecting a vehicle make
+    private void OnSelectMake(ChangeEventArgs e)
+    {
+
+        //Try to parse value passed from the onchange event
+        bool chk = int.TryParse(e.Value.ToString(), out int value);
+
+        //Set the selected make and reset the model and engine select fields
+        SelectedMake = chk ? value : 0;
+        SelectedModel = 0;
+        SelectedEngine = 0;
+
+        //Set select field lists to null
+        selectedModels = null;
+        selectedEngines = null;
+
+        //If make selection was valid, populate vehicle model list with models that match the selected make
+        if (chk)
+        {
+            selectedModels = vehicleResponse.VehicleMakes
+                .Where(vm => vm.MakeId == SelectedMake)
+                .FirstOrDefault()?
+                .VehicleModel.ToList();
+        }
+
+    }
+
+    //SS 03/04 Method fired to update the list of models that populate the model select field
+    private void OnSelectModel()
+    {
+
+        //Reset the engine select field
+        SelectedEngine = 0;
+
+        //Set the list of engines to null
+        selectedEngines = null;
+
+        //If model selection is valid...
+        if (SelectedModel != 0 && selectedModels != null)
+        {
+
+            //Get selected model
+            VehicleModel model = selectedModels
+                .Where(m => m.ModelId == SelectedModel)
+                .FirstOrDefault();
+
+            //If a fuel type is selected then only get engines that match this fuel type, otherwise get all engines for this model
+            if (SelectedFuelType != 0)
+            {
+                selectedEngines = model?.Vehicle
+                    .Where(e => e.FuelTypeId == SelectedFuelType)
+                    .ToList();
+            }
+            else
+            {
+                selectedEngines = model?.Vehicle.ToList();
+            }
+
+        }
+
+    }
+
+    //SS 03/04 Method for taking the user to the product shop to display products related to this vehicle
+    private void ViewProductsForVehicle()
+    {
+        if (selectedEngine == 0) return;
+
+        Navigation.NavigateTo(Navigation.BaseUri + $"product-shop?vehicleId={selectedEngine}");
+    }
+
+}

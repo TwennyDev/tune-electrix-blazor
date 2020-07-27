@@ -1,0 +1,38 @@
+﻿
+@using TuneLabProject.Shared.SharedModels
+
+<div class="col-lg-4 col-md-6 mb-4">
+    <div class="card h-100">
+        <div class="text-center">
+            <NavLink class="stretched-link" href="@DetailLink"><img class="card-img-top" style="object-fit:cover; max-height:250px;" src="@ImageSrc"></NavLink>
+        </div>
+        <div class="card-body">
+            <h4 class="card-title">
+                @Product.ProductName
+            </h4>
+            <h5>$@(Math.Round(Product.CurrentPrice, 2))</h5>
+            <p class="card-text restrict-text">@Product.ProductDesc</p>
+        </div>
+        <div class="card-footer">
+            <small class="text-muted">&#9733; &#9733; &#9733; &#9733; &#9734;</small>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    [Parameter]
+    public Product Product { get; set; }
+
+    private string ImageSrc
+    {
+        get => $"/img/{Product.ImageName}";
+    }
+
+    //SS 03/04 Property to return a link to the detail page for this product
+    private string DetailLink
+    {
+        get => $"product-detail?productId={Product.ProductId}";
+    }
+
+}

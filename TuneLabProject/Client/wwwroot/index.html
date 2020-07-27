@@ -1,0 +1,56 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>TuneLab</title>
+    <base href="/" />
+    <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/site.css" rel="stylesheet" />
+    <link href="css/SamsStyles.css" rel="stylesheet" />
+</head>
+
+<body>
+    <app>Loading...</app>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <!-- SS 06/04 Modal loading spinner and pop up message -->
+    <div id="loadSpinner" class="modal-sam">
+        <div class="spinner loading"></div>
+        <div id="modalPopup" class="modal-popup-sam closed-sam">
+            <div style="width:100%">
+                <span class="close-btn-sam" onclick="showLoadSpinner(false);">&times;</span>
+            </div>
+            <div style="width:100%;">
+                <div style="width:40%; float:left;">
+                    <img id="popupImg" style="width:100%;" src="img/greencheck.png" />
+                </div>
+                <div style="width:40%; float:right;">
+                    <h4 id="popupHeader"></h4>
+                    <p><strong>Transaction ID</strong> <span id="transId"></span></p>
+                    <p id="popupMessage"></p>
+                    <div style="width:100%; text-align:center; margin-top:20px;">
+                        <button type="button" class="btn btn-info" onclick="showLoadSpinner(false);">Close</button>
+                    </div>
+                </div>                
+            </div>
+            
+        </div>
+    </div>
+
+    <script src="js/cart.js"></script>
+    <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js"></script>
+    <script src="js/vehicle-search.js"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=AW-7eR609Y3BtkVYnCsdS1uOckqHeq6dEN-ZTGo7xSOwTtXVA78ISmnBsHdsJ-v8H7ZzIDEZFC1jbsSy&currency=NZD&disable-funding=credit,card"></script>
+
+</body>
+
+</html>

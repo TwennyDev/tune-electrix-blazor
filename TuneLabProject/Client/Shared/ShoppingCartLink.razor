@@ -1,0 +1,37 @@
+﻿@using TuneLabProject.Shared.Services;
+
+@inject IJSRuntime JSRuntime
+@inject AppState AppState
+
+<li class="nav-item px-3">
+    <NavLink class="nav-link" href="cart">
+        <span class="oi oi-cart" aria-hidden="true"></span> Shopping Cart <span class="badge cart-number-sam">@Quantity</span>
+    </NavLink>
+</li>
+
+@code {    
+
+    private int Quantity { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        //SS 27/3 Update the shopping cart link quantity icon on first load
+        await UpdateCart();
+
+        //SS 27/3 Add the UpdateCart method to a delegate within my AppState service, this allows it to be called from elsewhere
+        AppState.OnCartQuantityChange += UpdateCart;
+    }    
+
+    private async Task UpdateCart()
+    {
+        //SS 27/3 Get number of items stored in shopping cart cookie by calling my JS function located in cart.js
+        int quantity = await JSRuntime.InvokeAsync<int>("getNumberOfItems");
+
+        //SS 27/3 Set the quantity property to update the icon
+        Quantity = quantity;
+
+        //SS 27/3 Indicate that the component needs to be re-rendered
+        StateHasChanged();
+    }
+
+}

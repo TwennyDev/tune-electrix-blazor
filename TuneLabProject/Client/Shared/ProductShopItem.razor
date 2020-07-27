@@ -1,0 +1,150 @@
+﻿
+@using TuneLabProject.Shared.SharedModels
+
+@inject IJSRuntime JSRuntime
+
+<tr>
+    <td>@Product.ProductId</td>
+    <td class="col-sm-8 col-md-6">
+        <div class="media">
+            <img class="media-object" src="@ImageSrc" style="width: 72px; max-height:50px; object-fit:cover; margin-right:15px;">
+            <div class="media-body">
+                <h4 class="media-heading"><NavLink href="@DetailLink">@Product.ProductName</NavLink></h4>
+                <h5 class="media-heading"> Category <span class="text-info">@Product.ProductCategory.CategoryName</span></h5>
+                <span>Type: </span>
+
+                @if (Product.IsPhysical)
+                {
+                    <span class="text-info"><strong>Physical Item</strong></span>
+                }
+                else
+                {
+                    <span class="text-warning"><strong>Digital Item</strong></span>
+                }
+
+            </div>
+        </div>
+    </td>
+    <td class="col-sm-1 col-md-1" style="text-align: center">
+        <input type="number" min="@Minimum" max="@Product.StockLevel" class="form-control" @bind="Quantity">
+    </td>
+    <td class="col-sm-1 col-md-1 text-center"><strong>$@(Math.Round(Product.CurrentPrice, 2))</strong></td>
+    <td class="col-sm-1 col-md-1">
+
+        @if (Product.StockLevel == 0)
+        {
+            <button type="button" class="btn btn-info" style="min-width:120px;" disabled>Out Of Stock</button>
+        }
+        else
+        {
+            if (IsInCart)
+            {
+                <button type="button" class="btn btn-danger" style="min-width:120px;" @onclick="CartButtonPressed">Remove</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-success" style="min-width:120px;" @onclick="CartButtonPressed">Add To Cart</button>
+            }
+        }
+
+    </td>
+</tr>
+
+@code {
+
+    //SS 29/03 Delegate for holding reference to callback method in parent
+    [Parameter]
+    public Action<int, int> CartUpdated { get; set; }
+
+    //SS 29/03 Reference to product for this component
+    [Parameter]
+    public Product Product { get; set; }
+
+    private bool IsInCart { get; set; }
+
+    //SS 16/04 Property for constructing and returning a link to this product's detail page
+    private string DetailLink
+    {
+        get => $"product-detail?productId={Product.ProductId}";
+    }
+
+    //SS 16/04 Property for constructing and returning a link to the image src for this product
+    private string ImageSrc
+    {
+        get => $"/img/{Product.ImageName}";
+    }
+
+    //SS 29/03 Property to get/set product quantity
+    private int quantity;
+    private int Quantity
+    {
+        get => quantity;
+
+        set
+        {
+            if(Product.StockLevel == 0)
+            {
+                quantity = 0;
+            }
+            else
+            {
+                //Validate quantity
+                if (value < 1) quantity = 1;
+                else if (value > Product.StockLevel) quantity = Product.StockLevel;
+                else quantity = value;
+            }
+
+            if (IsInCart)
+            {
+                CartUpdated?.Invoke(Product.ProductId, quantity);
+            }
+
+        }
+    }
+
+    //SS 29/03 Property to get the minimum quantity for this product, this will be zero if there is no stock
+    private int Minimum
+    {
+        get
+        {
+            return Product.StockLevel > 0 ? 1 : 0;
+        }
+    }
+
+    //SS 29/03 This method is called by the framework after the component is initialised and the parameters have been set
+    protected override async Task OnParametersSetAsync()
+    {
+        //Check if item is in the user's cart
+        IsInCart = await JSRuntime.InvokeAsync<bool>("containsProduct", Product.ProductId);
+
+        if (IsInCart)
+        {
+            //If the item is in the cart get the quantity from the cookie data
+            int cartQuantity = await JSRuntime.InvokeAsync<int>("getProductQuantity", Product.ProductId);
+
+            if (Quantity != cartQuantity) Quantity = cartQuantity;
+        }
+        else
+        {
+            //If not in the cart initialise quantity to one
+            Quantity = 1;
+        }
+    }
+
+    //SS 29/03 Method invoked when clicking the add/remove button
+    private void CartButtonPressed()
+    {
+        //If the product is already in the cart then remove it, otherwise add the selected quantity
+        if (IsInCart)
+        {
+            CartUpdated?.Invoke(Product.ProductId, 0);
+            IsInCart = false;
+        }
+        else
+        {
+            CartUpdated?.Invoke(Product.ProductId, Quantity);
+            IsInCart = true;
+        }
+    }
+
+}

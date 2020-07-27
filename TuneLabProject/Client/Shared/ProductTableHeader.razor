@@ -1,0 +1,91 @@
+﻿
+@using TuneLabProject.Shared.SharedModels
+
+<tr>
+    @*
+        SS 17/04
+        Loop through SortedHeader list and render all table headers
+    *@
+
+    @foreach(SortedHeader header in headers)
+    {
+        <td class="@header.StyleClass" style="white-space:nowrap; @(!header.Text.Equals("Quantity") ? "cursor:pointer" : null)" @onclick="() => HeaderSelected(header)">
+
+            @header.Text
+
+            @if (header.Current)
+            {
+                <span class="@(Descending ? "oi oi-arrow-bottom" : "oi oi-arrow-top")" style="margin-left:5px;"></span>
+            }
+
+        </td>
+    }    
+    <th> </th>
+</tr>
+
+@code {
+
+    [Parameter]
+    public EventCallback<ProductRequestDTO.SortType> OnHeaderSelected { get; set; }
+
+    [Parameter]
+    public ProductRequestDTO.SortType SortedBy { get; set; }
+
+    [Parameter]
+    public bool Descending { get; set; }
+
+    private List<SortedHeader> headers;
+
+    //SS 16/04 Method invoked when page first loaded
+    protected override void OnInitialized()
+    {
+
+        //Populate header list with header objects
+        headers = new List<SortedHeader>()
+        {
+            new SortedHeader("ID"){ SortType = ProductRequestDTO.SortType.ProductId},
+            new SortedHeader("Product"){ SortType = ProductRequestDTO.SortType.ProductName},
+            new SortedHeader("Quantity"),
+            new SortedHeader("Price"){StyleClass = "text-center", SortType = ProductRequestDTO.SortType.ProductPrice}
+        };
+
+    }
+
+    //SS 16/04 Method invoked after component parameters have been set by parent
+    protected override void OnParametersSet()
+    {
+
+        foreach(SortedHeader header in headers)
+        {
+            header.Current = header.SortType == SortedBy && !header.Text.Equals("Quantity");
+        }
+
+    }
+
+    //SS 16/04 Method invoked when a header is clicked by the user
+    private async Task HeaderSelected(SortedHeader header)
+    {
+        //The quantity column cant be sorted so return
+        if (header.Text.Equals("Quantity")) return;
+
+        //Invoke callback in parent component
+        await OnHeaderSelected.InvokeAsync(header.SortType);
+    }
+
+    //SS 16/04 Class used for encapsulating table header information
+    class SortedHeader
+    {
+
+        public string Text { get; set; }
+        public string StyleClass { get; set; }
+        public ProductRequestDTO.SortType SortType { get; set; }
+        public bool Current { get; set; }
+
+        public SortedHeader(string text)
+        {
+            Text = text;
+        }
+
+    }
+
+}

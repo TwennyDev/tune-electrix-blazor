@@ -1,0 +1,115 @@
+﻿
+<nav aria-label="...">
+    <ul class="pagination justify-content-center">
+
+        @*
+            SS 17/04
+            Loop through all page links and render them
+        *@
+
+        @foreach (PageLink pageLink in pageLinks)
+        {
+            <li @onclick="() => PageSelected(pageLink)" class="page-item @(pageLink.Enabled ? null : "disabled") @(pageLink.Active ? "active" : null)" style="cursor:pointer;">
+                <span class="page-link" href="#" tabindex="-1">@pageLink.LinkText</span>
+            </li>
+        }
+
+    </ul>
+</nav>
+
+@code {
+
+    [Parameter]
+    public int CurrentPage { get; set; } = 1;
+
+    [Parameter]
+    public int TotalPages { get; set; }
+
+    [Parameter]
+    public int PageRadius { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnPageSelected { get; set; }
+
+    private List<PageLink> pageLinks;
+
+    //SS 17/04 Method invoked after parameters have been set by parent
+    protected override void OnParametersSet()
+    {
+        LoadPagination();
+    }
+
+    //SS 17/04 Method for populating list of page links to be rendered
+    private void LoadPagination()
+    {
+        pageLinks = new List<PageLink>();
+
+        //If current page is not 1, set previous button to active. Add previous button to list.
+        bool previousEnabled = CurrentPage != 1;
+        pageLinks.Add(new PageLink(CurrentPage - 1, previousEnabled, "Previous"));
+
+        //Loop though total amount of pages and add page links to list
+        for(int i = 1; i <= TotalPages; i++)
+        {
+
+            //Only add page link into the list if it falls within the page radius, this prevents too many page links being displayed if there
+            //is a large amount of pages. In this case i have set the page radius to 2, therefore only 2 page links before and after the current
+            //page will display
+            if(i >= CurrentPage - PageRadius && i <= CurrentPage + PageRadius)
+            {
+                //Add the page link and set it to active if the current page is equal to i
+                pageLinks.Add(new PageLink(i) { Active = CurrentPage == i });
+            }
+
+        }
+
+        //Add the next button to the list and set it to active as long as we are not on the last page
+        //and the total pages is not 0
+        bool nextEnabled = CurrentPage != TotalPages && TotalPages != 0;
+        pageLinks.Add(new PageLink(CurrentPage + 1, nextEnabled, "Next"));
+
+    }
+
+    //SS 17/04 Method invoked when a user clicks on a page link
+    private async Task PageSelected(PageLink pageLink)
+    {
+
+        //If the link clicked is the current page or is not enabled then just return and do nothing
+        if(pageLink.PageNumber == CurrentPage || !pageLink.Enabled)
+        {
+            return;
+        }
+
+        //Set the current page to the selected
+        CurrentPage = pageLink.PageNumber;
+
+        //Invoke callback to method in parent component to get the products for the selected page
+        await OnPageSelected.InvokeAsync(pageLink.PageNumber);
+
+    }
+
+    //SS 17/04 class for encapsulating pagelink information
+    class PageLink
+    {
+
+        public string LinkText { get; set; }
+        public int PageNumber { get; set; }
+        public bool Enabled { get; set; }
+        public bool Active { get; set; }
+
+        public PageLink(int pageNumber)
+            :this(pageNumber, true) { }
+
+        public PageLink(int pageNumber, bool enabled)
+            :this(pageNumber, enabled, pageNumber.ToString()) { }
+
+        public PageLink(int pageNumber, bool enabled, string text)
+        {
+            PageNumber = pageNumber;
+            Enabled = enabled;
+            LinkText = text;
+        }
+
+    }
+
+}

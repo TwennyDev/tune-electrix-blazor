@@ -1,0 +1,36 @@
+﻿
+@using System.Globalization
+@using TuneLabProject.Shared.SharedModels
+
+@inject NavigationManager Navigation
+
+<tr>
+    <td>@Invoice.InvoiceId</td>
+    <td>@Invoice.TransactionId</td>
+    <td>@DateFormatted</td>
+    <td>$@(Math.Round(Invoice.TotalPaid, 2))</td>
+    <td><button type="button" class="btn btn-success" @onclick="NavigateToInvoice">View Invoice</button></td>
+</tr>
+
+@code {
+
+    [Parameter]
+    public Invoice Invoice { get; set; }
+
+    //SS 10/04 Property to return the datetime of the invoice in NZ format
+    private string DateFormatted
+    {
+        get
+        {
+            return Invoice.InvoiceDate.ToString("dd/MM/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
+        }
+    }
+
+    //SS 10/04 Method invoked by clicking button, takes user to the detail page for this invoice
+    private void NavigateToInvoice()
+    {
+        string uri = Navigation.BaseUri + $"invoice-detail?invoiceId={Invoice?.InvoiceId}";
+        Navigation.NavigateTo(uri);
+    }
+
+}

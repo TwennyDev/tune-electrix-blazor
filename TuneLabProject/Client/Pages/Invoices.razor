@@ -1,0 +1,211 @@
+﻿@page "/invoices"
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using TuneLabProject.Shared.SharedModels
+@using TuneLabProject.Client.Utilities
+@using System.Text.Json
+
+@inject NavigationManager Navigation
+@inject HttpClient Http
+@inject IAccessTokenProvider AuthenticationService
+
+@attribute [Authorize]
+
+<div class="container content-box-sam">
+
+    <div class="alert alert-warning">
+        <strong>Note</strong> This is a student website and is completely fictional. No orders can or will be fulfilled!
+    </div>
+
+    <h1 class="text-info">My Invoices</h1>
+
+    <div class="row">
+        <div class="col table-responsive">
+
+            <table class="table table-hover">
+                <thead>
+
+                    <tr>
+
+                        <th>Invoice #</th>
+                        <th>Transaction ID</th>
+                        <th>Invoice Date</th>
+                        <th>Total</th>
+                        <th></th>
+
+                    </tr>
+
+                </thead>
+                <tbody>
+
+                    @*
+                        SS 17/04
+                        If invoiceResponse is null then the request has not yet completed so display a loading message.
+                    *@
+
+                    @if (invoiceResponse == null)
+                    {
+                        <tr>
+                            <td colspan="5">
+                                <div class="alert alert-info">
+                                    Loading invoice data. Please wait...
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+
+                        @*
+                            SS 17/04
+                            If the request has completed but has been flagged as unsuccessfull then display the error message
+                        *@
+
+                        if (!invoiceResponse.Success)
+                        {
+                            <tr>
+                                <td colspan="5">
+                                    <div class="alert alert-danger">
+                                        <strong>Error!</strong> An error occurred while trying to load invoice data. Please try again.<br />
+                                        @invoiceResponse.ErrorMessage
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+
+                            @*
+                                SS 17/04
+                                If the request has completed and was successful continue to display list of invoices for the user.
+                                The invoice list items are rendered using my custom InvoiceItem component. See /Shared/InvoiceItem.razor
+                                for more info.
+                            *@
+
+                            if (invoiceResponse.Invoices.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="5">
+                                        <div class="alert alert-info">
+                                            You do not have any invoices to view..<br />
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                foreach (Invoice invoice in invoiceResponse.Invoices)
+                                {
+                                    <InvoiceItem Invoice="invoice" />
+                                }
+                            }
+
+                        }
+
+                    }
+
+                </tbody>
+            </table>
+
+            @*
+                SS 17/04
+                Display the Pagination control component. This is a custom component, see /Shared/Pagination.razor for more info.
+            *@
+
+            <Pagination TotalPages="totalPages" CurrentPage="currentPage" PageRadius="2" OnPageSelected="PageSelected" />
+
+        </div>
+    </div>
+
+    <div class="row justify-content-center align-items-center">
+        
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+@code {
+
+    private InvoiceResponse invoiceResponse;
+
+    private int currentPage = 1;
+    private int totalPages;
+
+    //SS 10/04 Method called when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+        //Get all the user's invoices from the server
+        await GetInvoices();
+    }
+
+    //SS 10/04 Callback method called by the Pagination component when a page is selected
+    private async Task PageSelected(int pageNumber)
+    {
+
+        //Set the current page and send request for invoices
+        currentPage = pageNumber;
+        await GetInvoices();
+
+    }
+
+    //SS 10/04 Method for sending request to Invoice controller for retrieving all of a user's invoices
+    private async Task GetInvoices()
+    {
+
+        //Try to get an authentication token
+        var tokenResult = await AuthenticationService.RequestAccessToken();
+
+        if (tokenResult.TryGetToken(out var token))
+        {
+
+            //Create uri with page number in the query string
+            string uri = Navigation.BaseUri + $"Invoice/GetAllInvoices?pageNumber={currentPage}";
+
+            //Send authenticated request to the controller
+            HttpResponseMessage responseMessage = await Http.SendAuthenticatedAsync(HttpMethod.Get, uri, null, token.Value);
+
+            //If the response was successful...
+            if (responseMessage.IsSuccessStatusCode)
+            {
+
+                //Read the response content
+                string jsonContent = await responseMessage.Content.ReadAsStringAsync();
+
+                //Parse the response content
+                invoiceResponse = JsonSerializer.Deserialize<InvoiceResponse>(jsonContent);
+
+                if(invoiceResponse != null)
+                {
+                    totalPages = invoiceResponse.TotalPages;
+                }
+                else
+                {
+                    totalPages = 0;
+                    currentPage = 1;
+                }
+
+            }
+
+        }
+        else
+        {
+            //If token could not be retrieved, display error message
+            invoiceResponse = new InvoiceResponse()
+            {
+                Success = false,
+                ErrorMessage = "Authentication error!"
+            };
+
+            totalPages = 0;
+            currentPage = 1;
+        }
+
+    }
+
+}

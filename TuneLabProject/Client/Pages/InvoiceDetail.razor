@@ -1,0 +1,322 @@
+﻿@page "/invoice-detail"
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using Microsoft.AspNetCore.WebUtilities
+@using TuneLabProject.Shared.SharedModels
+@using TuneLabProject.Client.Utilities
+@using System.Text.Json
+@using System.Globalization
+
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IAccessTokenProvider AuthenticationService
+
+@attribute [Authorize]
+
+    <div class="container content-box-sam">
+
+        <div class="alert alert-warning">
+            <strong>Note</strong> This is a student website and is completely fictional. No orders can or will be fulfilled!
+        </div>
+
+        @*
+        SS 17/04
+        If invoiceResponse is null then it has not yet completed so display a loading message
+        *@
+
+        @if (invoiceResponse == null)
+        {
+            <div class="alert alert-info">
+                Loading invoice data...
+            </div>
+        }
+        else
+        {
+
+            @*
+            SS 17/04
+            If request has completed but flagged as unsuccessful then display the error message.
+            Otherwise continue and render the invoice details
+            *@
+
+            if (!invoiceResponse.Success)
+            {
+                <div class="alert alert-danger">
+                    <strong>Error! </strong>@invoiceResponse.ErrorMessage
+                </div>
+            }
+            else
+            {
+
+                <div class="invoice-box" style="margin-top:20px">
+                    <table cellpadding="0" cellspacing="0" id="invoiceTable">
+                        <tr class="top">
+                            <td colspan="4">
+                                <table>
+                                    <tr>
+                                        <td class="title">
+                                            <img src="/img/logo_horizontal.png" style="margin-left:-5%; width:100%; max-width:200px;">
+                                        </td>
+
+                                        <td></td>
+
+                                        <td>
+                                            <span style="font-weight:bold">Invoice #: </span>@Invoice.InvoiceId<br />
+                                            <span style="font-weight:bold">Invoice Date: </span>@DateFormatted<br />
+                                            <span style="font-weight:bold">Trans #: </span>@Invoice.TransactionId
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <tr class="information">
+                            <td colspan="4">
+                                <table>
+                                    <tr>
+                                        <td>
+                                            TuneLab Ltd<br />
+                                            12345 Queen Street<br />
+                                            Auckland 8654<br />
+                                            0800 TUNELAB<br />
+                                            accounts@TuneLab.com
+                                        </td>
+
+
+                                        <td style="text-align:right">
+                                            @Invoice.ShippingName<br />
+                                            @Invoice.ShippingStreet<br />
+                                            @Invoice.ShippingCity<br />
+                                            @Invoice.ShippingPostcode<br />
+                                            @UserEmail
+                                        </td>
+
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <tr class="heading">
+                            <td>
+                                Product#
+                            </td>
+                            <td>
+                                Product
+                            </td>
+
+                            <td>
+                                Quantity
+                            </td>
+
+                            <td>
+                                Line Total
+                            </td>
+                        </tr>
+
+                        @foreach (InvoiceProduct invoiceProduct in Invoice.InvoiceProduct)
+                        {
+                            <tr class="item">
+
+                                <td>@invoiceProduct.Product.ProductId</td>
+                                <td>@invoiceProduct.Product.ProductName<br /><small>$@(Math.Round(invoiceProduct.PriceAtTime, 2))@(invoiceProduct.Product.ProductCategoryId == 4 ? "p/h" : "ea")</small></td>
+                                <td>@invoiceProduct.Quantity</td>
+                                <td>@CalculateLineTotal(invoiceProduct)</td>
+
+                            </tr>
+                        }
+
+                        <tr class="total">
+
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td><span style="font-weight:bold">Excl. GST: $@SubTotal</span></td>
+
+                        </tr>
+
+                        <tr class="total">
+
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td><span style="font-weight:bold">GST: $@Gst</span></td>
+
+                        </tr>
+
+                        <tr class="total">
+
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td><span style="font-weight:bold">Total: $@(Math.Round(Invoice.TotalPaid, 2))</span></td>
+
+                        </tr>
+
+                    </table>
+                </div>
+
+            }
+        }
+
+        <div class="row justify-content-center align-items-center">
+
+            @*
+            SS 17/04
+            The following code renders a button that will navigate the user to the products page filtered by the selected vehicle.
+            If no vehicle is selected the button will be disabled.
+            *@
+
+            <div style="width:100%;margin-top:50px;text-align:center;">
+                <button class="btn btn-info" @onclick="NavigateBack">
+                    Back To Invoices
+                </button>
+            </div>
+            <div>
+
+                <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+            </div>
+
+        </div>
+
+    </div>
+
+@code {
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private InvoiceResponse invoiceResponse;
+
+    private Invoice Invoice { get; set; }
+
+    private decimal SubTotal { get; set; }
+
+    private decimal Gst { get; set; }
+
+    private string UserEmail { get; set; }
+
+    //SS 10/04 Property to return the datetime of the invoice in NZ format
+    private string DateFormatted
+    {
+        get
+        {
+            return Invoice.InvoiceDate.ToString("dd/MM/yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
+        }
+    }
+
+    //SS 10/04 Method called when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+        bool valid = false;
+
+        //Get the current uri
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+
+        //Get the current user
+        var user = (await authenticationStateTask).User;
+
+        //Get the user's email to display on the invoice
+        UserEmail = user.Identity.Name;
+
+        //Check for a valid query string including an invoice id
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("invoiceId", out var param))
+        {
+            if (int.TryParse(param.First(), out int id))
+            {
+                valid = true;
+                await GetInvoice(id);
+            }
+        }
+
+        //If no query string or product id is invalid, set response success to false and display error message
+        if (!valid)
+        {
+            invoiceResponse = new InvoiceResponse()
+            {
+                Success = false,
+                ErrorMessage = "Invalid invoice ID"
+            };
+        }
+    }
+
+    //SS 10/04 Method for getting the requested invoice via the invoice controller
+    private async Task GetInvoice(int id)
+    {
+
+        //Try to get an authentication token
+        var tokenResult = await AuthenticationService.RequestAccessToken();
+
+        if (tokenResult.TryGetToken(out var token))
+        {
+
+            //Create uri with invoice id as a query
+            string uri = Navigation.BaseUri + $"Invoice/GetInvoice?invoiceId={id}";
+
+            //Send authenticated request to invoice controller
+            HttpResponseMessage responseMessage = await Http.SendAuthenticatedAsync(HttpMethod.Get, uri, null, token.Value);
+
+            //If response was successful...
+            if (responseMessage.IsSuccessStatusCode)
+            {
+
+                //Read response content
+                string responseJson = await responseMessage.Content.ReadAsStringAsync();
+
+                //Parse response content
+                invoiceResponse = JsonSerializer.Deserialize<InvoiceResponse>(responseJson);
+
+                //Check if the invoice was found successfully by the server
+                if (invoiceResponse.Success)
+                {
+                    //Set the invoice parameter and calculate invoice totals
+                    Invoice = invoiceResponse.Invoices[0];
+                    CalculateTotals();
+                }
+
+            }
+
+        }
+        else
+        {
+            //If invoice was not found successfully, display the error message received fromo the server
+            invoiceResponse = new InvoiceResponse()
+            {
+                Success = false,
+                ErrorMessage = "Authentication error"
+            };
+        }
+
+    }
+
+    //SS 10/04 Method for returning the line total for each product on the invoice
+    private decimal CalculateLineTotal(InvoiceProduct invoiceProduct)
+    {
+        decimal total = invoiceProduct.PriceAtTime * invoiceProduct.Quantity;
+        return Math.Round(total, 2);
+    }
+
+    //SS 10/04 Method for calculating the invoice subtotal and gst amount
+    private void CalculateTotals()
+    {
+
+        decimal total = 0;
+
+        foreach (InvoiceProduct invoiceProduct in Invoice.InvoiceProduct)
+        {
+            total += (invoiceProduct.PriceAtTime * invoiceProduct.Quantity);
+        }
+
+        SubTotal = Math.Round(total, 2);
+        Gst = Math.Round((total * 0.15m), 2);
+
+    }
+
+    private void NavigateBack()
+    {
+        string uri = Navigation.BaseUri + "invoices";
+        Navigation.NavigateTo(uri);
+    }
+
+}

@@ -1,0 +1,121 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+@using TuneLabProject.Shared.Services
+@using TuneLabProject.Client.Utilities
+@using System.Text.Json
+
+@inject NavigationManager Navigation
+@inject SignOutSessionStateManager SignOutManager
+@inject IJSRuntime JSRuntime
+@inject AppState AppState
+@inject IAccessTokenProvider AuthenticationService
+@inject HttpClient Http
+
+<AuthorizeView>
+    <Authorized>
+        <span style="color:#fff;">Hello, @context.User.Identity.Name!</span>
+        <button class="nav-link btn btn-link btn-link-nav-sam" @onclick="BeginSignOut">Log out</button>        
+    </Authorized>
+    <NotAuthorized>
+        <a href="authentication/register">Register</a>
+        <a href="authentication/login">Log in</a>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code{  
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    //SS 19/04 Method invoked after page has rendered
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        //If cart data has not been loaded, load it now
+        if (!CartDataLoaded)
+        {
+            var user = (await authenticationStateTask).User;
+
+            if (user.Identity.IsAuthenticated)
+            {
+                LoadCartData();
+                CartDataLoaded = true;
+            }
+        }
+
+    }
+
+    //SS 27/3 Method for logging out the current user. It also clears the cart cookie first
+    private async Task BeginSignOut(MouseEventArgs args)
+    {
+        await ClearCartCookie();
+        await SignOutManager.SetSignOutState();
+        Navigation.NavigateTo("authentication/logout");
+    }
+
+    //SS 27/3 Method for clearing the shopping cart cookie using my JS function located in cart.js
+    public async Task ClearCartCookie()
+    {
+        await JSRuntime.InvokeVoidAsync("clearCartCookie");
+        AppState.CartHasChanged();
+    }
+
+    //SS 27/3 Boolean flag for ensuring cart data is only loaded on first sign in
+    private bool CartDataLoaded { get; set; }
+
+    //SS 27/3 Method holding the logic for initial shopping cart
+    private async void LoadCartData()
+    {
+
+        //CartDataLoaded = true;
+
+        //Try to retrieve JWT auth token
+        var tokenResult = await AuthenticationService.RequestAccessToken();
+
+        if (tokenResult.TryGetToken(out var token))
+        {
+            //Get number of items in the current cart
+            int currentCartQuantity = await JSRuntime.InvokeAsync<int>("getNumberOfItems");
+
+            //If there was items in the shopping cart before login, overwrite the now logged in user's cart
+            if (currentCartQuantity > 0)
+            {
+
+                string cartJson = await JSRuntime.InvokeAsync<string>("getCartJson");
+
+                HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Post, Navigation.BaseUri + "Cart/SetUserCart",
+                    cartJson, token.Value);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error in LoginDisplay.razor. The server responded with the code {response.StatusCode.ToString()} while trying to set user's cart data.");
+                }
+
+            }
+            //Otherwise, get the newly logged in account's cart data from the database and set into the cookie
+            else
+            {
+
+                //Send request to cart controller
+                HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Get, Navigation.BaseUri + "Cart/GetUserCart",
+                    null, token.Value);
+
+                //Check if response is successful
+                if (response.IsSuccessStatusCode)
+                {
+                    //Get content from response and set in cart cookie via javascript. Notify shopping cart link in nav bar to update
+                    string cartResponse = await response.Content.ReadAsStringAsync();
+                    string cartJson = JsonSerializer.Deserialize<string>(cartResponse);
+                    await JSRuntime.InvokeVoidAsync("setCartJson", cartJson);
+                    AppState.CartHasChanged();
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error in LoginDisplay.razor. The server responded with the code {response.StatusCode.ToString()} while trying to get user's cart data.");
+                }
+
+            }
+
+        }
+
+    }
+}

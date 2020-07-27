@@ -1,0 +1,333 @@
+﻿@page "/product-detail"
+
+@using TuneLabProject.Shared.SharedModels
+@using Microsoft.AspNetCore.WebUtilities
+@using TuneLabProject.Shared.Services
+@using TuneLabProject.Client.Utilities
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+
+@inject NavigationManager Navigation
+@inject HttpClient Http
+@inject AppState AppState
+@inject IJSRuntime JSRuntime
+@inject IAccessTokenProvider AuthenticationService
+
+<div class="container content-box-sam">
+
+    <div class="alert alert-warning">
+        <strong>Note</strong> This is a student website and is completely fictional. No orders can or will be fulfilled!
+    </div>
+
+    @*
+        SS 17/04 
+        If the productDetail response object is null then the request has not yet been completed.
+        Display a loading message to notify the user
+    *@
+
+    @if (productDetail == null)
+    {
+        <div class="alert alert-info">
+            Loading product information. Please wait...
+        </div>
+    }
+    else
+    {
+
+        @*
+            SS 17/04 
+            If the request has been completed but has been flagged as unsuccessful then display its included
+            error message
+        *@
+
+        if (!productDetail.Success)
+        {
+            <div class="alert alert-danger">
+                <strong>Error!</strong> @productDetail.ErrorMessage
+            </div>
+        }
+        else
+        {
+
+            @*
+                SS 17/04
+                If the request has completed and was successful then continue to render the rest of the page
+            *@
+
+            <h1 class="my-4">
+                @productDetail.Product.ProductName
+                <small class="text-info">@productDetail.Product.ProductCategory.CategoryName</small>
+            </h1>
+
+            <div class="row">
+
+                <div class="col-md-8">
+                    <img class="img-fluid" src="@ImageSrc" style="max-height:500px; object-fit:cover;">
+                </div>
+
+                <div class="col-md-4">
+
+                    <h3>Price (excl. GST)</h3>
+                    <h4 style="margin-top:15px;">$@(Math.Round(productDetail.Product.CurrentPrice, 2))<span>@(productDetail.Product.ProductCategoryId == 4 ? "p/h" : "ea")</span></h4>
+                    <input type="number" min="@Minimum" max="@productDetail.Product.StockLevel" class="form-control" style="max-width:75px;margin-top:15px;" @bind="Quantity" />
+
+                    @*
+                        SS 17/04 
+                        The below code renders a different button depending on whether the item is in stock and whether the item  
+                        is already in the user's cart or not
+                    *@
+
+                    @if (productDetail.Product.StockLevel == 0)
+                    {
+                        <button type="button" class="btn btn-info" style="margin-top:15px;" disabled>Out Of Stock</button>
+                    }
+                    else
+                    {
+                        @if (IsInCart)
+                        {
+                            <button type="button" class="btn btn-danger" style="margin-top:15px;" @onclick="() => UpdateCart(0)">Remove From Cart</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-success" style="margin-top:15px;" @onclick="() => UpdateCart(Quantity)">Add To Cart</button>
+                        }
+                    }
+
+                </div>
+
+            </div>
+
+            <div class="row" style="margin-top:10px;">
+
+                <div class="col">
+
+                    <h3 class="my-3 text-info">Product Description</h3>
+                    <p>
+                        @productDetail.Product.ProductDesc
+                    </p>
+
+                    @*
+                        SS 17/04
+                        The below code renders an option to navigate to the vehicle search/calculator but only if the item is not listed in the service category
+                    *@
+
+                    @if (productDetail.Product.ProductCategoryId != 4)
+                    {
+                        <p>
+                            To check if this product will suit your vehicle click the button below to go to the vehicle search page.
+                        </p>
+
+                        <button type="button" class="btn btn-info" style="margin-top:15px;" @onclick="NavigateToSearch">Vehicle Search</button>
+                    }
+
+
+                </div>
+
+            </div>
+
+        }
+
+    }
+
+    <div class="row justify-content-center align-items-center">
+        
+        <div>
+
+            <img src="/img/logo_vertical.png" style="width:100px;opacity:0.6;margin-top:10px;" />
+
+        </div>
+
+    </div>
+
+</div>
+
+
+@code {
+
+    [CascadingParameter]
+    private Task<AuthenticationState> authenticationStateTask { get; set; }
+
+    private bool IsInCart { get; set; }
+
+    private int Minimum
+    {
+        get
+        {
+            return productDetail.Product.StockLevel > 0 ? 1 : 0;
+        }
+    }
+
+    //SS 20/04 Property getter/setter to validate and return chosen cart quantity
+    private int quantity;
+    private int Quantity
+    {
+        get => quantity;
+
+        set
+        {
+            if (productDetail.Product.StockLevel == 0)
+            {
+                quantity = 0;
+            }
+            else
+            {
+                //Validate quantity
+                if (value < 1) quantity = 1;
+                else if (value > productDetail.Product.StockLevel) quantity = productDetail.Product.StockLevel;
+                else quantity = value;
+            }
+
+            if (IsInCart)
+            {
+                UpdateCart(quantity);
+            }
+        }
+    }
+
+    //SS 16/04 Property for constructing and returning image src link
+    private string ImageSrc
+    {
+        get => $"/img/{productDetail.Product?.ImageName}";
+    }
+
+    private ProductDetailResponse productDetail;
+
+    //SS 03/04 Method fired when page first loaded
+    protected override async Task OnInitializedAsync()
+    {
+        bool valid = false;
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+
+        //Check for a valid query string including a product id
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("productId", out var param))
+        {
+            if (int.TryParse(param.First(), out int id))
+            {
+                valid = true;
+                await GetProductDetail(id);
+            }
+        }
+
+        //If no query string or product id is invalid, set response success to false and display error message
+        if (!valid)
+        {
+            productDetail = new ProductDetailResponse()
+            {
+                Success = false,
+                ErrorMessage = "Invalid product ID"
+            };
+        }
+    }
+
+    //SS 03/04 Method for retrieving product information
+    private async Task GetProductDetail(int productId)
+    {
+
+        try
+        {
+            //Send request to ProductController to get product details for the selected id
+            productDetail = await Http.GetJsonAsync<ProductDetailResponse>($"Product/GetProductById?productId={productId}");
+        }
+        catch(Exception e)
+        {
+            productDetail = new ProductDetailResponse()
+            {
+                Success = false,
+                ErrorMessage = "An error occurred while attempting to get product details..."
+            };
+
+            System.Diagnostics.Debug.WriteLine("Error: An error occurred in ProductDetail.Razor.\n" + e.Message);
+
+        }
+
+        //If the request was successful...
+        if (productDetail.Success)
+        {
+            //Check if product is in the user's cart
+            IsInCart = await JSRuntime.InvokeAsync<bool>("containsProduct", productId);
+
+            //If the product is in the user's cart, set the select box to display the quantity. Otherwise display the minimum (either 0 or 1)
+            if (IsInCart)
+            {
+                int currentQuantityInCart = await JSRuntime.InvokeAsync<int>("getProductQuantity", productId);
+                Quantity = currentQuantityInCart;
+            }
+            else
+            {
+                Quantity = Minimum;
+            }
+        }
+
+    }
+
+    //SS 03/04 Method for updating the user's cart
+    private async void UpdateCart(int quantity)
+    {
+
+        string cartData = null;
+
+        if (IsInCart)
+        {
+            //Get the quantity currently stored in the cart. This invokes a Javascript function located in cart.js
+            int currentQuantityInCart = await JSRuntime.InvokeAsync<int>("getProductQuantity", productDetail.Product.ProductId);
+
+            //If the new quantity is the same as what is already stored, no changes are necessary
+            if (quantity == currentQuantityInCart) return;
+
+            //If its in the user's cart and the requested quantity is greater than zero, then update the cookie data using javascript
+            if (quantity > 0)
+            {
+                cartData = await JSRuntime.InvokeAsync<string>("changeItemQuantity", productDetail.Product.ProductId, quantity);
+            }
+            //If quantity is zero, then remove the item from the cookie data and notify the shopping cart link to update
+            else
+            {
+                cartData = await JSRuntime.InvokeAsync<string>("removeFromCart", productDetail.Product.ProductId);
+                IsInCart = false;
+                AppState.CartHasChanged();
+            }
+        }
+        else
+        {
+            //If the item is not in the cart, then add the item by invoking the JS method addToCart
+            cartData = await JSRuntime.InvokeAsync<string>("addToCart", productDetail.Product.ProductId, quantity);
+            IsInCart = true;
+            AppState.CartHasChanged();
+        }
+
+        //Try and get the current user if they are logged in
+        var user = (await authenticationStateTask).User;
+
+        //If user is logged in then also update the cart data in the database
+        if (cartData != null && user.Identity.IsAuthenticated)
+        {
+
+            //Attempt to get JWT auth token
+            var tokenResult = await AuthenticationService.RequestAccessToken();
+
+            if (tokenResult.TryGetToken(out var token))
+            {
+
+                //Send request to server to set the user's cart in the database
+                HttpResponseMessage response = await Http.SendAuthenticatedAsync(HttpMethod.Post, Navigation.BaseUri + "Cart/SetUserCart",
+                        cartData, token.Value);
+
+                //If there was an error while updating, log it
+                if (!response.IsSuccessStatusCode)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error in ProductDetail.razor. The server responded with the code {response.StatusCode.ToString()} while trying to set user cart data.");
+                }
+
+            }
+
+        }
+        StateHasChanged();
+    }
+
+    //SS 12/04 Method invoked by button to navigate user to the vehicle search page
+    private void NavigateToSearch()
+    {
+        string uri = Navigation.BaseUri + "vehicle-search";
+        Navigation.NavigateTo(uri);
+    }
+
+}

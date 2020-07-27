@@ -1,0 +1,66 @@
+﻿@page
+@model RegisterConfirmationModel
+@{
+    ViewData["Title"] = "Register confirmation";
+}
+
+<!-- SS 20/3 Modified Identity Register Confirmation page -->
+
+<div id="login">
+    <div id="imgBox" class="row justify-content-center align-items-center">
+        <a href="/"><img src="/img/logo_horizontal_inverted.png" style="width: 300px" /></a>
+    </div>
+    <div class="container">
+        <div id="login-row" class="row justify-content-center align-items-center">
+            <div id="login-column" class="col-md-6">
+                <div id="login-box" class="col-md-12 p-4">
+                    <h3 class="text-center text-info">@ViewData["Title"]</h3>
+
+                    @{
+                        if (@Model.DisplayConfirmAccountLink)
+                        {
+                            <p class="mt-4">
+                                This app does not currently have a real email sender registered.
+
+                            </p>
+                            <p class="mt-4">
+                                Please click the button below to confirm your email.
+                            </p>
+
+                            <div class="row justify-content-center align-items-center mt-4">
+
+                                <button class="btn btn-info btn-md" onclick="redirect();">Confirm</button>
+
+                            </div>
+                        }
+                        else
+                        {
+                            <p>
+                                Please check your email to confirm your account.
+                            </p>
+                        }
+                    }
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SS 20/3 Added the following JS function to replace the email confirmation link with a button -->
+
+<script>
+
+    function redirect() {
+
+        var url = "/Identity/Account/ConfirmEmail?userId=";
+        var id = "@Model.UserId";
+        var code = "@Model.Code";
+        console.log("redirecting");
+        window.location.href = url + id + "&code=" + code;
+
+    }
+
+</script>
+
+
